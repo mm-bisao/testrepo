@@ -1,0 +1,140 @@
+import pandas as pd
+import folium
+import math
+
+# Link compartilhado da planilha (insira o ID correto da sua planilha)
+google_sheet_url = "https://docs.google.com/spreadsheets/d/1RWFcXKcWjQGQp64Mx8sqxC75tr4uzcj6DHtvMwHFmck/export?format=csv"
+
+# Ler os dados diretamente do Google Sheets
+data = pd.read_csv(google_sheet_url)
+
+# Função para determinar a cor com base na bitola (para as linhas e marcadores)
+def get_color(bitola):
+    if bitola < 400:
+        return 'green'  # Para bitolas menores que 400
+    elif 400 <= bitola < 480:
+        return 'orange'  # Para bitolas de 400 a 480
+    elif 480 <= bitola < 640:
+        return 'blue'  # Para bitolas de 480 a 640
+    elif 640 <= bitola < 700:
+        return 'red'  # Para bitolas de 640 a 700
+    elif 700 <= bitola < 800:
+        return 'purple'  # Para bitolas de 700 a 800
+    elif 800 <= bitola < 860:
+        return 'yellow'  # Para bitolas de 800 a 860
+    elif 860 <= bitola < 960:
+        return 'pink'  # Para bitolas de 860 a 960
+    else:
+        return 'brown'  # Para bitolas maiores que 960
+
+# Função para desenhar a seta triangular entre duas coordenadas
+def draw_arrow(map_object, start_coords, end_coords, color, tooltip_text):
+    # Calcula o ponto médio da linha para a seta
+    mid_coords = [(start_coords[0] + end_coords[0]) / 2, (start_coords[1] + end_coords[1]) / 2]
+
+    # Calcula o ângulo da linha (em radianos) entre as duas coordenadas
+    angle = math.atan2(end_coords[1] - start_coords[1], end_coords[0] - start_coords[0])
+
+    # Distância entre o ponto inicial e o ponto final
+    dist = math.sqrt((end_coords[0] - start_coords[0]) ** 2 + (end_coords[1] - start_coords[1]) ** 2)
+
+    # Define a altura e a largura da seta (em função da distância)
+    arrow_length = dist * 0.25  # Aumentando o tamanho da seta (25% da distância)
+    arrow_width = arrow_length * 0.75  # A largura da seta será 75% da altura
+
+    # Calcula as coordenadas dos pontos da seta (triangular)
+    angle_offset = math.pi / 6  # O ângulo de desvio para formar uma seta
+    arrow_tip = [mid_coords[0] + arrow_length * math.cos(angle),
+                 mid_coords[1] + arrow_length * math.sin(angle)]
+
+    arrow_left = [mid_coords[0] + arrow_width * math.cos(angle + angle_offset),
+                  mid_coords[1] + arrow_width * math.sin(angle + angle_offset)]
+
+    arrow_right = [mid_coords[0] + arrow_width * math.cos(angle - angle_offset),
+                   mid_coords[1] + arrow_width * math.sin(angle - angle_offset)]
+
+    # Desenha a seta triangular
+    folium.Polygon(
+        locations=[arrow_tip, arrow_left, arrow_right],
+        color=color,
+        weight=2,
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.7,
+        tooltip=tooltip_text  # Agora a seta também tem o tooltip
+    ).add_to(map_object)
+
+# Criar o mapa com uma localização inicial arbitrária e zoom
+m = folium.Map(location=[0, 0], zoom_start=2, tiles=None)  # Inicia sem tiles padrão
+
+# Adicionar a camada de OpenStreetMap (mais atualizada)
+folium.TileLayer('OpenStreetMap').add_to(m)
+
+# Lista para armazenar as coordenadas de todos os pontos para ajustar o zoom automaticamente
+bounds = []
+
+# Adicionar linhas, setas e marcadores ao mapa
+for _, row in data.iterrows():
+    # Parse das coordenadas iniciais e finais
+    start_coords = [float(x) for x in row["coordenada inicial"].split(",")]
+    end_coords = [float(x) for x in row["coordenada final"].split(",")]
+
+    # Adicionar as coordenadas aos limites do mapa
+    bounds.append(start_coords)
+    bounds.append(end_coords)
+
+    # Obter a bitola e determinar a cor da linha
+    bitola = float(row['bitola da linha de dutos'])
+    color = get_color(bitola)  # Cor comum para a linha
+
+    # Texto do tooltip com as informações da linha
+    tooltip_text = f"""Nome: {row['nome da linha de dutos']}<br>
+                       Comprimento: {row['comprimento da linha de dutos']} m<br>
+                       Bitola: {row['bitola da linha de dutos']}"""
+
+    # Criar a linha entre os pontos com a cor da bitola e o mesmo tooltip
+    folium.PolyLine(
+        [start_coords, end_coords],
+        color=color,  # Cor da linha definida pela bitola
+        weight=6,  # Peso maior para as linhas
+        opacity=0.8,
+        tooltip=tooltip_text  # Tooltip também na linha
+    ).add_to(m)
+
+    # Chamar a função para desenhar a seta triangular com o mesmo tooltip
+    draw_arrow(m, start_coords, end_coords, color, tooltip_text)
+
+    # Tooltip para os marcadores com o nome da linha e coordenadas (inicial ou final)
+    start_tooltip = f"""Nome da linha: {row['nome da linha de dutos']}<br>
+                        Coordenada (Inicial): {start_coords[0]}, {start_coords[1]}"""
+
+    end_tooltip = f"""Nome da linha: {row['nome da linha de dutos']}<br>
+                      Coordenada (Final): {end_coords[0]}, {end_coords[1]}"""
+
+    # Adicionar marcadores de círculo nos pontos inicial e final com a mesma cor da linha
+    folium.CircleMarker(
+        location=start_coords,
+        radius=10,  # Aumentei o tamanho do marcador
+        color=color,  # Cor do marcador com base na bitola
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.7,
+        tooltip=start_tooltip,  # Tooltip para o ponto inicial
+    ).add_to(m)
+
+    folium.CircleMarker(
+        location=end_coords,
+        radius=10,  # Aumentei o tamanho do marcador
+        color=color,  # Cor do marcador com base na bitola
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.7,
+        tooltip=end_tooltip,  # Tooltip para o ponto final
+    ).add_to(m)
+
+# Ajustar o mapa para abranger todos os pontos
+m.fit_bounds(bounds)
+
+# Salvar o mapa em um arquivo HTML
+m.save("mapa_dutos_interativo_com_seta_maior_e_tooltip_openstreetmap.html")
+print("O mapa interativo foi salvo como 'mapa_dutos_interativo_com_seta_maior_e_tooltip_openstreetmap.html'. Abra-o no navegador para visualizar!")
